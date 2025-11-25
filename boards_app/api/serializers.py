@@ -280,6 +280,10 @@ class TaskWriteSerializer(serializers.ModelSerializer):
         """
         Bei POST: status + priority zwingend.
         Bei PATCH (partial) dürfen sie fehlen.
+
+        Zusätzlich:
+        - assignee muss Mitglied des Boards sein
+        - reviewer muss Mitglied des Boards sein
         """
         request = self.context.get("request")
         is_partial = getattr(request, "method", "").upper() in ["PATCH"]
@@ -321,7 +325,6 @@ class TaskWriteSerializer(serializers.ModelSerializer):
             validated_data["priority"] = self._map_priority_label(priority_label)
 
         return super().update(instance, validated_data)
-
 
 
 class CommentSerializer(serializers.ModelSerializer):

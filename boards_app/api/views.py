@@ -2,7 +2,7 @@ from datetime import timedelta
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import viewsets, permissions,status, generics
+from rest_framework import viewsets, permissions, status, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
@@ -34,7 +34,8 @@ class BoardViewSet(viewsets.ModelViewSet):
     - PATCH  /api/boards/{id}/   → aktualisieren (BoardUpdateSerializer)
     - DELETE /api/boards/{id}/   → löschen
     """
-    permission_classes = [permissions.IsAuthenticated,IsBoardMember,IsBoardOwnerForBoardDelete,]
+    permission_classes = [permissions.IsAuthenticated,
+                          IsBoardMember, IsBoardOwnerForBoardDelete,]
 
     def get_queryset(self):
         """
@@ -52,23 +53,6 @@ class BoardViewSet(viewsets.ModelViewSet):
         if self.action in ["update", "partial_update"]:
             return BoardUpdateSerializer
         return BoardListSerializer
-    
-    def create(self, request, *args, **kwargs):
-        write_serializer = TaskWriteSerializer(
-            data=request.data,
-            context=self.get_serializer_context(),
-        )
-        write_serializer.is_valid(raise_exception=True)
-
-        # HIER: created_by auf den aktuellen User setzen
-        task = write_serializer.save(created_by=request.user)
-
-        read_serializer = TaskReadSerializer(
-            task,
-            context=self.get_serializer_context(),
-        )
-        headers = self.get_success_headers(read_serializer.data)
-        return Response(read_serializer.data, status=status.HTTP_201_CREATED, headers=headers)   
 
     def perform_create(self, serializer):
         """
@@ -104,8 +88,8 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     permission_classes = [
         permissions.IsAuthenticated,
-        IsBoardMember,             
-        IsTaskCreatorOrBoardOwner,  
+        IsBoardMember,
+        IsTaskCreatorOrBoardOwner,
     ]
 
     def get_queryset(self):
@@ -121,7 +105,6 @@ class TaskViewSet(viewsets.ModelViewSet):
             return TaskWriteSerializer
         return TaskReadSerializer
 
-
     def _ensure_user_is_board_member(self, board: Board):
         """
         Wirft 403, wenn der aktuelle User kein Member/Owner des Boards ist.
@@ -133,7 +116,8 @@ class TaskViewSet(viewsets.ModelViewSet):
 
         if board.members.filter(id=user.id).exists():
             return
-        raise PermissionDenied("Der Benutzer muss Mitglied des Boards sein, um eine Task zu erstellen.")
+        raise PermissionDenied(
+            "Der Benutzer muss Mitglied des Boards sein, um eine Task zu erstellen.")
 
     def create(self, request, *args, **kwargs):
         """
@@ -152,7 +136,8 @@ class TaskViewSet(viewsets.ModelViewSet):
         board = write_serializer.validated_data.get("board")
         if board is None:
             # Sollte durch DRF schon abgefangen sein, aber zur Sicherheit:
-            raise PermissionDenied("Ein Board muss angegeben werden, um eine Task zu erstellen.")
+            raise PermissionDenied(
+                "Ein Board muss angegeben werden, um eine Task zu erstellen.")
 
         # hier wird die Vorgabe erzwungen:
         self._ensure_user_is_board_member(board)
@@ -193,7 +178,7 @@ class TaskViewSet(viewsets.ModelViewSet):
 
 
 class ActivityViewSet(viewsets.ModelViewSet):
-    
+
     serializer_class = ActivitySerializer
     permission_classes = [permissions.IsAuthenticated, IsBoardMember]
 
