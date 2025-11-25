@@ -8,19 +8,17 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from boards_app.models import Board, Column, Task, Activity
 from .serializers import (
-    BoardListSerializer,
     BoardDetailSerializer,
-    BoardUpdateSerializer,
     ColumnSerializer,
     TaskReadSerializer,
     TaskWriteSerializer,
     CommentSerializer,
     ActivitySerializer,
+    BoardSerializer,
 )
 from .permissions import (
     IsBoardMember,
     IsBoardOwnerForBoardDelete,
-    IsAssigneeOrReviewerForTaskWrite,
     IsTaskCreatorOrBoardOwner
 )
 
@@ -46,21 +44,29 @@ class BoardViewSet(viewsets.ModelViewSet):
         return Board.objects.filter(Q(owner=user) | Q(members=user)).distinct()
 
     def get_serializer_class(self):
-        if self.action in ["list", "create"]:
-            return BoardListSerializer
         if self.action == "retrieve":
             return BoardDetailSerializer
-        if self.action in ["update", "partial_update"]:
-            return BoardUpdateSerializer
-        return BoardListSerializer
+        return BoardSerializer
 
     def perform_create(self, serializer):
-        """
-        Beim Erstellen: Owner = aktueller User,
-        und sich selbst als Member hinzufügen.
-        """
-        board = serializer.save(owner=self.request.user)
-        board.members.add(self.request.user)
+        user = self.request.user
+        board = serializer.save(owner=user)
+        board.members.add(user)
+
+        default_columns = [
+            ("To-do",       Column.Status.TODO,        1),
+            ("In-progress", Column.Status.IN_PROGRESS, 2),
+            ("Review",      Column.Status.REVIEW,      3),
+            ("Done",        Column.Status.DONE,        4),
+        ]
+
+        for name, status, position in default_columns:
+            Column.objects.create(
+                board=board,
+                name=name,
+                status=status,
+                position=position,
+            )
 
 
 class ColumnViewSet(viewsets.ModelViewSet):

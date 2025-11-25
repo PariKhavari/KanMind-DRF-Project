@@ -90,6 +90,45 @@ class TaskInBoardSerializer(serializers.ModelSerializer):
         ]
 
 
+class BoardSerializer(serializers.ModelSerializer):
+    """
+    List-Serializer für GET /api/boards/
+    entspricht der Doku:
+    - id
+    - title
+    - member_count
+    - ticket_count
+    - tasks_to_do_count
+    - tasks_high_prio_count
+    - owner_id
+    """
+
+    member_count = serializers.SerializerMethodField()
+    ticket_count = serializers.IntegerField(source="tickets_count", read_only=True)
+    tasks_to_do_count = serializers.IntegerField(
+        source="todo_tasks_count", read_only=True
+    )
+    tasks_high_prio_count = serializers.IntegerField(
+        source="high_priority_tasks_count", read_only=True
+    )
+    owner_id = serializers.IntegerField(source="owner.id", read_only=True)
+
+    class Meta:
+        model = Board
+        fields = [
+            "id",
+            "title",
+            "member_count",
+            "ticket_count",
+            "tasks_to_do_count",
+            "tasks_high_prio_count",
+            "owner_id",
+        ]
+
+    def get_member_count(self, obj):
+        return obj.members.count()
+
+
 class BoardDetailSerializer(serializers.ModelSerializer):
     """
     Für:
@@ -288,13 +327,44 @@ class TaskWriteSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         is_partial = getattr(request, "method", "").upper() in ["PATCH"]
 
+         # 1) Pflichtfelder nur bei POST/PUT
         if not is_partial:
-            # POST oder PUT → beide Felder müssen da sein
             if "status" not in attrs:
-                raise serializers.ValidationError({"status": "Dieses Feld ist erforderlich."})
+                raise serializers.ValidationError(
+                    {"status": "Dieses Feld ist erforderlich."}
+                )
             if "priority" not in attrs:
-                raise serializers.ValidationError({"priority": "Dieses Feld ist erforderlich."})
+                raise serializers.ValidationError(
+                    {"priority": "Dieses Feld ist erforderlich."}
+                )
 
+        # 2) Board-/Member-Regel
+        # board: bei POST/PATCH evtl. in attrs, sonst von instance
+        board = attrs.get("board") or getattr(self.instance, "board", None)
+        assignee = attrs.get("assignee", getattr(self.instance, "assignee", None))
+        reviewer = attrs.get("reviewer", getattr(self.instance, "reviewer", None))
+
+        errors = {}
+
+        if board is None:
+            errors["board"] = "Board ist erforderlich."
+        else:
+            # Assignee muss Member des Boards sein
+            if assignee and not board.members.filter(id=assignee.id).exists():
+                errors["assignee_id"] = (
+                    "Assignee muss Mitglied des Boards sein."
+                )
+
+            # Reviewer muss Member des Boards sein
+            if reviewer and not board.members.filter(id=reviewer.id).exists():
+                errors["reviewer_id"] = (
+                    "Reviewer muss Mitglied des Boards sein."
+                )
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        # restliche Standardvalidierungen (z.B. Feld-Typen)
         return super().validate(attrs)
 
     def create(self, validated_data):
