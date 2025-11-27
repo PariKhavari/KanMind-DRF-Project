@@ -8,13 +8,16 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 from boards_app.models import Board, Column, Task, Activity
 from .serializers import (
+    # BoardSerializer,
     BoardDetailSerializer,
     ColumnSerializer,
     TaskReadSerializer,
     TaskWriteSerializer,
     CommentSerializer,
     ActivitySerializer,
-    BoardSerializer,
+    BoardListSerializer,
+    BoardUpdateSerializer,
+
 )
 from .permissions import (
     IsBoardMember,
@@ -32,27 +35,34 @@ class BoardViewSet(viewsets.ModelViewSet):
     - PATCH  /api/boards/{id}/   → aktualisieren (BoardUpdateSerializer)
     - DELETE /api/boards/{id}/   → löschen
     """
+
     permission_classes = [permissions.IsAuthenticated,
                           IsBoardMember, IsBoardOwnerForBoardDelete,]
 
+    """
+    Nur Boards, in denen der aktuelle User Member ist.
+     (Wenn du Owner auch einbeziehen willst: Q(owner=user) dazu nehmen.)
+    """
+
     def get_queryset(self):
-        """
-        Nur Boards, in denen der aktuelle User Member ist.
-        (Wenn du Owner auch einbeziehen willst: Q(owner=user) dazu nehmen.)
-        """
         user = self.request.user
-        return Board.objects.filter(Q(owner=user) | Q(members=user)).distinct()
+        return Board.objects.filter(
+            Q(owner=user) | Q(members=user)
+        ).distinct()
 
     def get_serializer_class(self):
         if self.action == "retrieve":
             return BoardDetailSerializer
-        return BoardSerializer
+        if self.action in ["update", "partial_update"]:
+            return BoardUpdateSerializer
+        return BoardListSerializer
 
     def perform_create(self, serializer):
         user = self.request.user
         board = serializer.save(owner=user)
         board.members.add(user)
 
+        # Standard-Spalten anlegen
         default_columns = [
             ("To-do",       Column.Status.TODO,        1),
             ("In-progress", Column.Status.IN_PROGRESS, 2),
@@ -167,12 +177,8 @@ class TaskViewSet(viewsets.ModelViewSet):
         partial = kwargs.pop("partial", False)
         instance = self.get_object()
 
-        write_serializer = TaskWriteSerializer(
-            instance,
-            data=request.data,
-            partial=partial,
-            context=self.get_serializer_context(),
-        )
+        write_serializer = TaskWriteSerializer(instance, data=request.data, partial=partial, context=self.get_serializer_context(),
+                                               )
         write_serializer.is_valid(raise_exception=True)
         task = write_serializer.save()
 
@@ -180,7 +186,15 @@ class TaskViewSet(viewsets.ModelViewSet):
             task,
             context=self.get_serializer_context(),
         )
-        return Response(read_serializer.data)
+
+        data = dict(read_serializer.data)
+
+        # Nur bei PATCH /api/tasks/{id}/ → Felder entfernen
+        if partial:
+            data.pop("board", None)
+            data.pop("comments_count", None)
+
+        return Response(data)
 
 
 class ActivityViewSet(viewsets.ModelViewSet):
