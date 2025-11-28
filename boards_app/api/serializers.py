@@ -6,19 +6,35 @@ from rest_framework.exceptions import NotFound
 
 
 class UserSerializer(serializers.ModelSerializer):
+    """
+    Basic user serializer used in board and task APIs.
+    Exposes:
+    - primary key and username
+    - first/last name and email
+    - a computed `full_name` field
+    """
 
     full_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "username", "first_name",
-                  "last_name", "email", "full_name"]
+        fields = [
+            "id",
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "full_name",
+        ]
 
     def get_full_name(self, obj):
-        full = (obj.first_name or "").strip() + \
-            " " + (obj.last_name or "").strip()
+        """
+        Build a display name from first_name and last_name.
+        If both are empty, falls back to `username`.
+        """
+        full = (obj.first_name or "").strip() + " " + (obj.last_name or "").strip()
         return full.strip() or obj.username
-
+    
 
 class BoardListSerializer(serializers.ModelSerializer):
     """
@@ -29,22 +45,10 @@ class BoardListSerializer(serializers.ModelSerializer):
     """
 
     member_count = serializers.SerializerMethodField()
-    ticket_count = serializers.IntegerField(
-        source="tickets_count",
-        read_only=True,
-    )
-    tasks_to_do_count = serializers.IntegerField(
-        source="todo_tasks_count",
-        read_only=True,
-    )
-    tasks_high_prio_count = serializers.IntegerField(
-        source="high_priority_tasks_count",
-        read_only=True,
-    )
-    owner_id = serializers.IntegerField(
-        source="owner.id",
-        read_only=True,
-    )
+    ticket_count = serializers.IntegerField(read_only=True)
+    tasks_to_do_count = serializers.IntegerField(read_only=True)
+    tasks_high_prio_count = serializers.IntegerField(read_only=True)
+    owner_id = serializers.IntegerField( read_only=True)
 
     class Meta:
         model = Board
@@ -56,21 +60,21 @@ class BoardListSerializer(serializers.ModelSerializer):
             "tasks_to_do_count",
             "tasks_high_prio_count",
             "owner_id",
-            "members",
         ]
 
-        extra_kwargs = {
-            "members": {"write_only": True, "required": False},
-        }
-
     def get_member_count(self, obj):
-        """
-        Return number of members for this board.
-        """
         return obj.members.count()
 
 
 class UserSummarySerializer(serializers.ModelSerializer):
+    """
+    Compact user representation used in task responses.
+    Exposes:
+    - id: primary key
+    - email: login / contact address
+    - fullname: combined first and last name or fallback to username
+    """
+
     fullname = serializers.SerializerMethodField()
 
     class Meta:
@@ -149,6 +153,13 @@ class TaskInBoardSerializer(TaskReadSerializer):
 
 
 class BoardDetailSerializer(serializers.ModelSerializer):
+    """
+    Detailed board representation used for GET /api/boards/{board_id}/.
+    Includes:
+    - id, title, owner_id
+    - members: list of users assigned to the board
+    - tasks: all tasks that belong to this board
+    """
 
     owner_id = serializers.IntegerField(source="owner.id", read_only=True)
     members = UserSummarySerializer(many=True, read_only=True)
@@ -160,7 +171,13 @@ class BoardDetailSerializer(serializers.ModelSerializer):
 
 
 class BoardUpdateSerializer(serializers.ModelSerializer):
-
+    """
+    Serializer used for updating a board (PATCH /api/boards/{id}/).
+    Response format matches the API specification:
+    - owner_data: compact representation of the board owner
+    - members_data: compact representation of all board members
+    - members: list of member IDs (write-only)
+    """
     owner_data = UserSummarySerializer(source="owner", read_only=True)
     members_data = UserSummarySerializer(
         source="members", many=True, read_only=True)

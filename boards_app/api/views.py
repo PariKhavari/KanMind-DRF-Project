@@ -245,11 +245,16 @@ class TaskViewSet(viewsets.ModelViewSet):
 
 
 class ActivityViewSet(viewsets.ModelViewSet):
-
+    """
+    ViewSet for CRUD operations on task activities/comments.
+    """
     serializer_class = ActivitySerializer
     permission_classes = [permissions.IsAuthenticated, IsBoardMember]
 
     def get_queryset(self):
+        """
+        Return activities for boards where the current user is a member.
+        """
         user = self.request.user
         return Activity.objects.filter(task__board__members=user).distinct()
 
