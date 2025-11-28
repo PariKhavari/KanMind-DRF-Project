@@ -18,16 +18,12 @@ router.register("tasks", TaskViewSet, basename="task")
 router.register("columns", ColumnViewSet, basename="column")
 
 urlpatterns = [
-    # ⇨ SPEZIELLE TASK-ENDPOINTS MÜSSEN VOR DEM ROUTER STEHEN
+  
     path("tasks/assigned-to-me/", AssignedToMeTasksView.as_view(), name="tasks-assigned-to-me"),
     path("tasks/reviewing/", ReviewingTasksView.as_view(), name="tasks-reviewing"),
-
     path("tasks/<int:task_id>/comments/", TaskCommentsListCreateView.as_view(), name="task-comments"),
     path("tasks/<int:task_id>/comments/<int:comment_id>/", TaskCommentDeleteView.as_view(), name="task-comment-delete"),
-
     path("dashboard/stats/", DashboardStatsView.as_view(), name="dashboard-stats"),
-
-    # Router ganz zum Schluss:
     path("", include(router.urls)),
 ]
 

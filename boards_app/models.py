@@ -10,7 +10,6 @@ class Board(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        # Praktische Standard-Sortierung z.B. für Listenansichten
         ordering = ["title"]
 
     def __str__(self) -> str:
@@ -35,7 +34,6 @@ class Board(models.Model):
 
 class Column(models.Model):
 
-    # Die Spalte im Board: To Do, In Progress, Review, Done.
     class Status(models.TextChoices):
         TODO = "TODO", "To Do"
         IN_PROGRESS = "IN_PROGRESS", "In Progress"
@@ -48,7 +46,6 @@ class Column(models.Model):
     position = models.PositiveIntegerField(default=0, help_text="Reihenfolge der Spalten im Board.")
 
     class Meta:
-        # Standard-Sortierung für Spalten im Board
         ordering = ["position", "id"]
 
     def __str__(self) -> str:
@@ -78,14 +75,12 @@ class Task(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True, help_text="Zeitpunkt, an dem die Task als Done markiert wurde.")
 
     class Meta:
-        # Standard-Sortierung: nach Spalte, dann nach Position in der Spalte, dann id
         ordering = ["column__position", "position", "id"]
 
     @property
     def status(self) -> str:
         if not self.column:
             return None
-        # gibt "to-do", "in-progress", "review", "done" zurück
         return self.column.status.label
 
     @property
@@ -98,14 +93,12 @@ class Task(models.Model):
 
 class Activity(models.Model):
 
-    # Kommentare an einer Task.
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="activities",help_text="Zu welcher Task gehört diese Aktivität?")
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,related_name="activities", help_text="Wer hat den Kommentar / die Aktivität erstellt?")
     message = models.TextField(help_text="Kommentar")
     created_at = models.DateTimeField(auto_now_add=True, help_text="Wann wurde die Aktivität erstellt?")
 
     class Meta:
-        # Standard-Sortierung: älteste Activity zuerst
         ordering = ["created_at"]
 
     def __str__(self) -> str:

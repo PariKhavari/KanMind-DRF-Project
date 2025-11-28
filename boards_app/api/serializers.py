@@ -2,11 +2,11 @@ from boards_app.models import Board, Column, Task
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from boards_app.models import Board, Column, Task, Activity
+from rest_framework.exceptions import NotFound
 
 
 class UserSerializer(serializers.ModelSerializer):
 
-    # Vereinfachte Darstellung des Users für Assignee, Reviewer und Members.
     full_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -15,7 +15,6 @@ class UserSerializer(serializers.ModelSerializer):
                   "last_name", "email", "full_name"]
 
     def get_full_name(self, obj):
-        # Kombiniert Vor- und Nachnamen, fällt zurück auf username
         full = (obj.first_name or "").strip() + \
             " " + (obj.last_name or "").strip()
         return full.strip() or obj.username
@@ -23,18 +22,29 @@ class UserSerializer(serializers.ModelSerializer):
 
 class BoardListSerializer(serializers.ModelSerializer):
     """
-    Für:
+    Serializer for board list and create responses.
+    Used for:
     - GET /api/boards/
-    - Response von POST /api/boards/
-    Felder laut Doku:
-    id, title, member_count, ticket_count, tasks_to_do_count,
-    tasks_high_prio_count, owner_id
+    - response of POST /api/boards/
     """
-    member_count = serializers.IntegerField(read_only=True)
-    ticket_count = serializers.IntegerField(read_only=True)
-    tasks_to_do_count = serializers.IntegerField(read_only=True)
-    tasks_high_prio_count = serializers.IntegerField(read_only=True)
-    owner_id = serializers.IntegerField(source="owner.id", read_only=True)
+
+    member_count = serializers.SerializerMethodField()
+    ticket_count = serializers.IntegerField(
+        source="tickets_count",
+        read_only=True,
+    )
+    tasks_to_do_count = serializers.IntegerField(
+        source="todo_tasks_count",
+        read_only=True,
+    )
+    tasks_high_prio_count = serializers.IntegerField(
+        source="high_priority_tasks_count",
+        read_only=True,
+    )
+    owner_id = serializers.IntegerField(
+        source="owner.id",
+        read_only=True,
+    )
 
     class Meta:
         model = Board
@@ -46,11 +56,18 @@ class BoardListSerializer(serializers.ModelSerializer):
             "tasks_to_do_count",
             "tasks_high_prio_count",
             "owner_id",
-            "members",          # für Request-Body beim POST
+            "members",
         ]
+
         extra_kwargs = {
             "members": {"write_only": True, "required": False},
         }
+
+    def get_member_count(self, obj):
+        """
+        Return number of members for this board.
+        """
+        return obj.members.count()
 
 
 class UserSummarySerializer(serializers.ModelSerializer):
@@ -66,15 +83,18 @@ class UserSummarySerializer(serializers.ModelSerializer):
 
 
 class TaskReadSerializer(serializers.ModelSerializer):
+    """
+    Read serializer for tasks:
+    - used in GET /api/tasks/
+    - used in GET /api/tasks/{id}/
+    - used in assigned-to-me/reviewing/board-detail
+    """
     board = serializers.IntegerField(source="board.id", read_only=True)
     assignee = UserSummarySerializer(read_only=True)
     reviewer = UserSummarySerializer(read_only=True)
-
-    # Status aus der Column holen und in "to-do", "review", ... umwandeln
     status = serializers.SerializerMethodField()
-    # Priority in kleinem String zurückgeben (low/medium/high/critical)
     priority = serializers.SerializerMethodField()
-    comments_count = serializers.SerializerMethodField()
+    comments_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Task
@@ -92,7 +112,6 @@ class TaskReadSerializer(serializers.ModelSerializer):
         ]
 
     def get_status(self, obj):
-
         mapping = {
             Column.Status.TODO: "to-do",
             Column.Status.IN_PROGRESS: "in-progress",
@@ -105,28 +124,17 @@ class TaskReadSerializer(serializers.ModelSerializer):
         return mapping.get(column.status, "").lower()
 
     def get_priority(self, obj):
-        # Task.Priority speichert "LOW", "MEDIUM", ...
-        # mapping = {
-        #     Task.Priority.LOW: "low",
-        #     Task.Priority.MEDIUM: "medium",
-        #     Task.Priority.HIGH: "high",
-        #     Task.Priority.CRITICAL: "critical",
-        # }
         return obj.priority.lower() if obj.priority else None
-
-    def get_comments_count(self, obj):
-        # falls dein related_name = "activities" ist
-        return obj.activities.count()
 
 
 class TaskInBoardSerializer(TaskReadSerializer):
     """
-    Task-Darstellung, wie sie im Board-Detail vorkommt.
-    (ohne board-Feld, da Task innerhalb des Boards liegt)
+    Task representation inside board detail responses.
+    Used for:
+    - GET /api/boards/{id}/ (tasks array)
     """
-  
+
     class Meta(TaskReadSerializer.Meta):
-        # model = Task
         fields = [
             "id",
             "title",
@@ -139,48 +147,9 @@ class TaskInBoardSerializer(TaskReadSerializer):
             "comments_count",
         ]
 
-# class BoardSerializer(serializers.ModelSerializer):
-#     """
-#     List-Serializer für GET /api/boards/
-#     entspricht der Doku:
-#     - id
-#     - title
-#     - member_count
-#     - ticket_count
-#     - tasks_to_do_count
-#     - tasks_high_prio_count
-#     - owner_id
-#     """
-
-#     member_count = serializers.SerializerMethodField()
-#     ticket_count = serializers.IntegerField(source="tickets_count", read_only=True)
-#     tasks_to_do_count = serializers.IntegerField(source="todo_tasks_count", read_only=True)
-#     tasks_high_prio_count = serializers.IntegerField(source="high_priority_tasks_count", read_only=True)
-#     owner_id = serializers.IntegerField(source="owner.id", read_only=True)
-
-#     class Meta:
-#         model = Board
-#         fields = [
-#             "id",
-#             "title",
-#             "member_count",
-#             "ticket_count",
-#             "tasks_to_do_count",
-#             "tasks_high_prio_count",
-#             "owner_id",
-#         ]
-
-#     def get_member_count(self, obj):
-#         return obj.members.count()
-
 
 class BoardDetailSerializer(serializers.ModelSerializer):
-    """
-    Für:
-    - GET /api/boards/{board_id}/
-    Felder laut Doku:
-    id, title, owner_id, members[], tasks[]
-    """
+
     owner_id = serializers.IntegerField(source="owner.id", read_only=True)
     members = UserSummarySerializer(many=True, read_only=True)
     tasks = TaskInBoardSerializer(many=True, read_only=True)
@@ -191,14 +160,10 @@ class BoardDetailSerializer(serializers.ModelSerializer):
 
 
 class BoardUpdateSerializer(serializers.ModelSerializer):
-    """
-    Für:
-    - PATCH /api/boards/{board_id}/
-    Response laut Doku:
-    id, title, owner_data {..}, members_data [...]
-    """
+
     owner_data = UserSummarySerializer(source="owner", read_only=True)
-    members_data = UserSummarySerializer(source="members", many=True, read_only=True)
+    members_data = UserSummarySerializer(
+        source="members", many=True, read_only=True)
 
     class Meta:
         model = Board
@@ -210,8 +175,10 @@ class BoardUpdateSerializer(serializers.ModelSerializer):
 
 class ColumnSerializer(serializers.ModelSerializer):
     """
-    Serializer für eine Column / Spalte ohne verschachtelte Tasks.
-    Gut für einfache Endpunkte (z.B. Column-Liste).
+    Serializer for board columns without nested tasks.
+    Used for:
+    - listing columns
+    - simple CRUD operations on columns
     """
 
     class Meta:
@@ -221,17 +188,15 @@ class ColumnSerializer(serializers.ModelSerializer):
 
 class TaskWriteSerializer(serializers.ModelSerializer):
     """
-    Serializer für POST/PATCH /api/tasks/
+    Write serializer for /api/tasks/ (POST, PATCH).
 
-    Erwartet laut Doku u.a.:
+    Expects:
+    - board: int (board id)
     - status: "to-do" | "in-progress" | "review" | "done"
     - priority: "low" | "medium" | "high" | "critical"
-
-    Bei POST müssen status + priority vorhanden sein.
-    Bei PATCH dürfen Felder weggelassen werden.
     """
 
-    # bei PATCH optional, bei POST prüfen wir das manuell
+    board = serializers.IntegerField(write_only=True)
     status = serializers.CharField(write_only=True, required=False)
     priority = serializers.CharField(write_only=True, required=False)
 
@@ -265,21 +230,30 @@ class TaskWriteSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id"]
 
-    # ---------- Hilfsfunktionen ----------
+    def validate_board(self, value: int) -> Board:
+        """
+        Resolve integer board id to a Board instance.
+        """
+        try:
+            return Board.objects.get(pk=value)
+        except Board.DoesNotExist:
+            raise NotFound("Das angegebene Board existiert nicht.")
 
     def _get_column_for_status(self, board: Board, status_label: str) -> Column:
-        """Mappt 'to-do' etc. auf Column.Status.* und holt die passende Spalte."""
+        """
+        Map external status label to the matching Column of the board.
+        """
         label_to_choice = {
-            "to-do": Column.Status.TODO,
-            "in-progress": Column.Status.IN_PROGRESS,
-            "review": Column.Status.REVIEW,
-            "done": Column.Status.DONE,
+            "to-do": "TODO",
+            "in-progress": "IN_PROGRESS",
+            "review": "REVIEW",
+            "done": "DONE",
         }
         try:
             choice_value = label_to_choice[status_label]
         except KeyError:
             raise serializers.ValidationError(
-                {"status": "Ungültiger Status-Wert. Erlaubt: to-do, in-progress, review, done."}
+                {"status": "Ungültiger Status. Erlaubt: to-do, in-progress, review, done."}
             )
 
         try:
@@ -290,7 +264,9 @@ class TaskWriteSerializer(serializers.ModelSerializer):
             )
 
     def _map_priority_label(self, label: str) -> str:
-        """Nimmt 'low'/'medium'/'high'/'critical' und liefert die DB-Werte."""
+        """
+        Map external priority label to Task.Priority value.
+        """
         mapping = {
             "low": Task.Priority.LOW,
             "medium": Task.Priority.MEDIUM,
@@ -304,63 +280,28 @@ class TaskWriteSerializer(serializers.ModelSerializer):
                 {"priority": "Ungültige Priorität. Erlaubt: low, medium, high, critical."}
             )
 
-    # ---------- create / update ----------
-
     def validate(self, attrs):
         """
-        Bei POST: status + priority zwingend.
-        Bei PATCH (partial) dürfen sie fehlen.
-
-        Zusätzlich:
-        - assignee muss Mitglied des Boards sein
-        - reviewer muss Mitglied des Boards sein
+        For POST: status and priority are required.
+        For PATCH: both may be omitted.
         """
         request = self.context.get("request")
-        is_partial = getattr(request, "method", "").upper() in ["PATCH"]
+        is_partial = getattr(request, "method", "").upper() == "PATCH"
 
-        # 1) Pflichtfelder nur bei POST/PUT
         if not is_partial:
             if "status" not in attrs:
                 raise serializers.ValidationError(
-                    {"status": "Dieses Feld ist erforderlich."}
-                )
+                    {"status": "Dieses Feld ist erforderlich."})
             if "priority" not in attrs:
                 raise serializers.ValidationError(
-                    {"priority": "Dieses Feld ist erforderlich."}
-                )
+                    {"priority": "Dieses Feld ist erforderlich."})
 
-        # 2) Board-/Member-Regel
-        # board: bei POST/PATCH evtl. in attrs, sonst von instance
-        board = attrs.get("board") or getattr(self.instance, "board", None)
-        assignee = attrs.get("assignee", getattr(
-            self.instance, "assignee", None))
-        reviewer = attrs.get("reviewer", getattr(
-            self.instance, "reviewer", None))
-
-        errors = {}
-
-        if board is None:
-            errors["board"] = "Board ist erforderlich."
-        else:
-            # Assignee muss Member des Boards sein
-            if assignee and not board.members.filter(id=assignee.id).exists():
-                errors["assignee_id"] = (
-                    "Assignee muss Mitglied des Boards sein."
-                )
-
-            # Reviewer muss Member des Boards sein
-            if reviewer and not board.members.filter(id=reviewer.id).exists():
-                errors["reviewer_id"] = (
-                    "Reviewer muss Mitglied des Boards sein."
-                )
-
-        if errors:
-            raise serializers.ValidationError(errors)
-
-        # restliche Standardvalidierungen (z.B. Feld-Typen)
         return super().validate(attrs)
 
     def create(self, validated_data):
+        """
+        Create task: resolve status → column and priority → enum.
+        """
         status_label = validated_data.pop("status")
         priority_label = validated_data.pop("priority")
 
@@ -372,18 +313,16 @@ class TaskWriteSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        # Board darf laut Doku nicht geändert werden
+        """
+        Update task: board stays unchanged, status/priority optional.
+        """
         validated_data.pop("board", None)
 
-        # Status nur ändern, wenn er im PATCH-Body enthalten ist
         if "status" in validated_data:
             status_label = validated_data.pop("status")
             validated_data["column"] = self._get_column_for_status(
-                instance.board,
-                status_label,
-            )
+                instance.board, status_label)
 
-        # Priority nur ändern, wenn im Body enthalten
         if "priority" in validated_data:
             priority_label = validated_data.pop("priority")
             validated_data["priority"] = self._map_priority_label(
@@ -394,10 +333,8 @@ class TaskWriteSerializer(serializers.ModelSerializer):
 
 class CommentSerializer(serializers.ModelSerializer):
     """
-    Für:
     - GET /api/tasks/{task_id}/comments/
     - POST /api/tasks/{task_id}/comments/
-    Response-Felder: id, created_at, author (Name), content
     """
     author = serializers.SerializerMethodField()
     content = serializers.CharField(source="message")
@@ -416,9 +353,10 @@ class CommentSerializer(serializers.ModelSerializer):
 
 class ActivitySerializer(serializers.ModelSerializer):
     """
-    Kommentare / Aktivitäten zu einer Task.
-    - author: als verschachtelter User (nur lesen)
-    - author_id: optional, falls du irgendwann IDs direkt setzen willst
+    Serializer for task activities/comments.
+    Used for:
+    - listing comments of a task
+    - creating new comments
     """
 
     author = UserSerializer(read_only=True)
