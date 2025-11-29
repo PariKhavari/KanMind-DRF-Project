@@ -15,8 +15,10 @@ def _get_fullname(user: User) -> str:
 
 class RegistrationView(APIView):
     """
-    POST /api/registration/
-    Erstellt einen neuen User und gibt Token + Basisdaten zurück.
+    Handle user registration.
+    Endpoint:
+    - POST /api/registration/
+    Creates a new user and returns auth token and basic user data.
     """
 
     permission_classes = [permissions.AllowAny]
@@ -38,13 +40,17 @@ class RegistrationView(APIView):
 
 class LoginView(APIView):
     """
-    POST /api/login/
-    Authentifiziert per E-Mail + Passwort und gibt Token + Userdaten zurück.
+    Handle user login with email and password.
+    Endpoint:
+    - POST /api/login/
+    Authenticates the user and returns token and basic user data.
     """
-
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, format=None):
+        """
+        Validate login credentials, authenticate user and return token payload.
+        """
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -59,7 +65,6 @@ class LoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Da wir per E-Mail einloggen, checken wir das Passwort manuell
         if not user.check_password(password):
             return Response(
                 {"detail": "Ungültige E-Mail oder Passwort."},
@@ -76,16 +81,18 @@ class LoginView(APIView):
         }
         return Response(data, status=status.HTTP_200_OK)
     
-
 class EmailCheckView(APIView):
     """
-    GET /api/email-check/?email=...
-    Prüft, ob die E-Mail existiert und gibt User-Daten zurück.
+    Check if a given email address exists and return basic user data.
+    Endpoint:
+    - GET /api/email-check/?email=...
     """
-
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, format=None):
+        """
+        Validate the email query parameter and return user info if found.
+        """
         serializer = EmailCheckSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
 
